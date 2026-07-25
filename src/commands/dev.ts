@@ -127,11 +127,11 @@ export default class Dev extends Command {
             try {
                 const hostStr = req.headers.host || "localhost";
                 const urlObj = new URL(req.url || '/', "http://" + hostStr);
-                urlObj.searchParams.set('preview_theme_id', themeId as string);
-                urlObj.searchParams.set('preview_website_id', websiteId as string); // For Storefront to know which website data to load
+                urlObj.searchParams.set('themeId', themeId as string);
+                // urlObj.searchParams.set('preview_website_id', websiteId as string); // For Storefront to know which website data to load
                 
                 // Ayrıca header olarak da ekleyelim (Storefront nasıl okuyorsa)
-                req.headers['x-crafter-website-id'] = websiteId as string;
+                // req.headers['x-crafter-website-id'] = websiteId as string;
                 req.headers['x-crafter-theme-id'] = themeId as string;
 
                 req.url = urlObj.pathname + urlObj.search;
