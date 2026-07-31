@@ -35,3 +35,4 @@ crafter <komut>
 - `crafter push`: Yerel dosyaları tamamen buluta yükleyin (Sıfırdan senkronizasyon).
 - `crafter pull`: Buluttaki tüm dosyaları yerel klasöre indirin.
 - `crafter pack`: Temayı satmak/dağıtmak üzere .zip haline getirin.
+- `crafter publish`: Geliştirme (dev) ortamınızdaki dosyaları alıp resmi bir sürüm (versiyon) olarak paketler ve onay sürecine gönderir.

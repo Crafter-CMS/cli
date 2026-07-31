@@ -48,6 +48,18 @@ export default class Dev extends Command {
             this.error(chalk.red("API'ye bağlanılamadı: " + error.message));
         }
 
+        // Generate crafter-manifest.json to ensure security features work
+        const manifestPath = path.join(projectDir, 'crafter-manifest.json');
+        let manifestData: any = { marketplaceThemeId: themeId };
+        try {
+            const res = await api.get(`/marketplace/themes/${themeId}/manifest`);
+            if (res.data) {
+                manifestData = res.data;
+            }
+        } catch (e) { }
+        await fs.writeJSON(manifestPath, manifestData, { spaces: 2 });
+
+
         // Hem yeni hem mevcut tema için başlangıçta tüm dosyaları senkronize et
         const pushSpinner = ora('Tüm dosyalar senkronize ediliyor (assets dahil)...').start();
         try {
@@ -133,6 +145,7 @@ export default class Dev extends Command {
                 // Ayrıca header olarak da ekleyelim (Storefront nasıl okuyorsa)
                 // req.headers['x-crafter-website-id'] = websiteId as string;
                 req.headers['x-crafter-theme-id'] = themeId as string;
+                req.headers['x-crafter-theme-version'] = 'dev';
 
                 req.url = urlObj.pathname + urlObj.search;
 

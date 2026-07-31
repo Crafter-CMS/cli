@@ -90,6 +90,17 @@ export default class Init extends Command {
                 } catch (e) { }
             }
             await fs.writeJSON(localConfigPath, { ...currentConfig, themeId }, { spaces: 2 });
+
+            // Generate crafter-manifest.json
+            const manifestPath = path.join(projectDir, 'crafter-manifest.json');
+            let manifestData: any = { marketplaceThemeId: themeId };
+            try {
+                const res = await api.get(`/marketplace/themes/${themeId}/manifest`);
+                if (res.data) {
+                    manifestData = res.data;
+                }
+            } catch (e) { }
+            await fs.writeJSON(manifestPath, manifestData, { spaces: 2 });
             
             // Sadece dizin boşsa veya iskelet yoksa boilerplate dosyaları oluştur
             if (!fs.existsSync(path.join(projectDir, 'layout', 'theme.liquid'))) {
