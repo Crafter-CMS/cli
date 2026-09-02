@@ -142,7 +142,7 @@ export default class Init extends Command {
             }
 
             this.log(chalk.green('\n✅ Init işlemi tamamlandı!'));
-            this.log(chalk.blue('Şimdi "theme-kit dev" komutunu çalıştırarak geliştirmeye başlayabilirsiniz.'));
+            this.log(chalk.blue('Şimdi "npx @crafter-cms/cli dev" komutunu çalıştırarak geliştirmeye başlayabilirsiniz.'));
         }
     }
 

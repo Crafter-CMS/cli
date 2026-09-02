@@ -6,7 +6,7 @@ export class AuthGuard {
         const config = await ConfigService.getConfig();
         if (!config.accessToken) {
             console.error(chalk.red('\nBu komutu kullanmak için giriş yapmalısınız.'));
-            console.error(chalk.yellow('Lütfen "theme-kit login" komutunu çalıştırın.'));
+            console.error(chalk.yellow('Lütfen "npx @crafter-cms/cli login" komutunu çalıştırın.'));
             process.exit(1);
         }
     }

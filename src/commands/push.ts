@@ -1,99 +1,77 @@
 import { Command, Flags } from '@oclif/core';
 import { ApiService } from '../services/api.service';
+import { resolveThemeId } from '../utils/theme';
 import chalk from 'chalk';
 import ora from 'ora';
-import * as path from 'path';
-import * as fs from 'fs-extra';
-import { glob } from 'glob';
+import archiver from 'archiver';
+import FormData from 'form-data';
 
 export default class Push extends Command {
-    static description = "Yerel klasördeki tüm dosyaları Crafter API'sine yükler (Sıfırdan senkronizasyon).";
+    static description = "Yerel klasördeki tüm dosyaları tek seferde Crafter API'sine yükler (Sıfırdan senkronizasyon).";
 
     static flags = {
-        theme: Flags.string({ char: 't', description: 'Theme ID (Eğer theme.config.js dosyasında yoksa zorunludur)' }),
+        theme: Flags.string({ char: 't', description: 'Theme ID (Eğer crafter-manifest.json dosyasında yoksa zorunludur)' }),
     };
 
     async run() {
         const { flags } = await this.parse(Push);
-        
         const projectDir = process.cwd();
-        
-        let themeId = flags.theme;
 
-        const localConfigPath = path.join(projectDir, 'theme.config.js');
-        if (fs.existsSync(localConfigPath) && !themeId) {
-            try {
-                const localConfig = require(localConfigPath);
-                themeId = themeId || localConfig.themeId;
-            } catch(e) {}
-        }
+        const themeId = await resolveThemeId(projectDir, flags.theme);
 
         if (!themeId) {
-            this.error(chalk.red('Theme ID belirtilmelidir. "theme-kit push -t <themeId>" komutunu kullanın veya projede init yapın.'));
+            this.error(chalk.red('Theme ID bulunamadı. "npx @crafter-cms/cli push -t <themeId>" komutunu kullanın veya "npx @crafter-cms/cli init" yapın.'));
         }
 
-        const spinner = ora('Yerel dosyalar taranıyor...').start();
+        const spinner = ora('Tema dosyaları paketleniyor (ZIP)...').start();
 
         try {
             const api = await ApiService.getInstance();
-            
-            // Collect files
-            const filesToUpload: string[] = [];
-            
-            const scanDir = async (dir: string) => {
-                const entries = await fs.readdir(dir, { withFileTypes: true });
-                for (const entry of entries) {
-                    const fullPath = path.join(dir, entry.name);
-                    const relativePath = path.relative(projectDir, fullPath).replace(/\\/g, '/');
-                    
-                    // Ignore some folders
-                    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'theme.config.js' || entry.name === 'dist' || entry.name.endsWith('.zip')) {
-                        continue;
-                    }
 
-                    if (entry.isDirectory()) {
-                        await scanDir(fullPath);
-                    } else {
-                        filesToUpload.push(relativePath);
-                    }
-                }
-            };
-            
-            await scanDir(projectDir);
+            // 1. Temayı bellekte (Buffer olarak) ZIP'le
+            const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
+                const bufs: Buffer[] = [];
+                const archive = (archiver as any)('zip', { zlib: { level: 6 } });
 
-            if (filesToUpload.length === 0) {
-                spinner.warn(chalk.yellow('Yüklenecek dosya bulunamadı.'));
-                return;
-            }
+                archive.on('data', (chunk: Buffer) => bufs.push(chunk));
+                archive.on('end', () => resolve(Buffer.concat(bufs)));
+                archive.on('error', (err: any) => reject(err));
 
-            spinner.text = `${filesToUpload.length} dosya yükleniyor...`;
+                // Hariç tutulacak dosyalar (gereksiz yüklemeleri önler)
+                archive.glob('**/*', {
+                    cwd: projectDir,
+                    ignore: [
+                        'node_modules/**',
+                        '.git/**',
+                        '.crafter',
+                        '*.zip',
+                        'dist/**',
+                        '.DS_Store',
+                        'desktop.ini'
+                    ],
+                    dot: true // .liquidrc, .env gibi dotfile'ları dahil eder (.git ve .crafter hariç)
+                });
 
-            let uploadedCount = 0;
-            for (const fileKey of filesToUpload) {
-                spinner.text = `Yükleniyor: ${fileKey}`;
-                
-                const localFilePath = path.join(projectDir, fileKey);
-                
-                const ext = path.extname(localFilePath).toLowerCase();
-                const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf'];
-                const isBinary = binaryExtensions.includes(ext);
+                archive.finalize();
+            });
 
-                const content = await fs.readFile(localFilePath, isBinary ? 'base64' : 'utf8');
-                
-                const payload: any = {
-                    key: fileKey,
-                    content: content
-                };
-                if (isBinary) {
-                    payload.encoding = 'base64';
-                }
+            spinner.text = `Tema API'ye yükleniyor (${Math.round(zipBuffer.length / 1024)} KB)...`;
 
-                await api.put(`/marketplace/themes/${themeId}/file`, payload);
-                
-                uploadedCount++;
-            }
+            // 2. Multipart FormData oluştur
+            const form = new FormData();
+            form.append('file', zipBuffer, {
+                filename: 'theme.zip',
+                contentType: 'application/zip',
+            });
 
-            spinner.succeed(chalk.green(`Başarılı! ${uploadedCount} dosya API'ye yüklendi.`));
+            // 3. Tek seferde backend'e gönder
+            const response = await api.post(`/marketplace/themes/${themeId}/sync`, form, {
+                headers: form.getHeaders(),
+            });
+
+            const fileCount = response.data?.fileCount || response.data?.count;
+            const countMsg = fileCount ? ` (${fileCount} dosya)` : '';
+            spinner.succeed(chalk.green(`Başarılı! Tema API'ye başarıyla senkronize edildi${countMsg}.`));
         } catch (error: any) {
             spinner.fail(chalk.red('Yükleme işlemi başarısız oldu.'));
             this.error(error.response?.data?.message || error.message);

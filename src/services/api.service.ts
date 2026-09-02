@@ -16,6 +16,8 @@ export class ApiService {
             headers: {
                 'Content-Type': 'application/json',
             },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
         });
 
         this.instance.interceptors.request.use(async (axiosConfig) => {
@@ -31,12 +33,12 @@ export class ApiService {
                             await ConfigService.setConfig({ accessToken });
                             axiosConfig.headers.Authorization = `Bearer ${accessToken}`;
                         } catch (error) {
-                            console.error(chalk.red('\nOturumunuz sona erdi. Lütfen theme-kit login komutu ile tekrar giriş yapın.'));
+                            console.error(chalk.red('\nOturumunuz sona erdi. Lütfen npx @crafter-cms/cli login komutu ile tekrar giriş yapın.'));
                             await ConfigService.clearConfig();
                             process.exit(1);
                         }
                     } else {
-                        console.error(chalk.red('\nOturumunuz sona erdi. Lütfen theme-kit login komutu ile tekrar giriş yapın.'));
+                        console.error(chalk.red('\nOturumunuz sona erdi. Lütfen npx @crafter-cms/cli login komutu ile tekrar giriş yapın.'));
                         process.exit(1);
                     }
                 } else {
@@ -50,7 +52,7 @@ export class ApiService {
             (response) => response,
             (error: AxiosError) => {
                 if (error.response?.status === 401) {
-                    console.error(chalk.red('\nOturumunuz sona erdi. Lütfen theme-kit login komutu ile tekrar giriş yapın.'));
+                    console.error(chalk.red('\nOturumunuz sona erdi. Lütfen npx @crafter-cms/cli login komutu ile tekrar giriş yapın.'));
                     process.exit(1);
                 }
                 if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {

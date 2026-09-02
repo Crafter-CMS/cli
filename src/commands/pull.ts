@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core';
 import { ApiService } from '../services/api.service';
+import { resolveThemeId } from '../utils/theme';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
@@ -9,7 +10,7 @@ export default class Pull extends Command {
     static description = 'S3 üzerindeki temanın tüm dosyalarını yerel klasöre indirir.';
 
     static flags = {
-        theme: Flags.string({ char: 't', description: 'Theme ID (Eğer theme.config.js dosyasında yoksa zorunludur)' }),
+        theme: Flags.string({ char: 't', description: 'Theme ID (Eğer crafter-manifest.json dosyasında yoksa zorunludur)' }),
         force: Flags.boolean({ char: 'f', description: 'Var olan yerel dosyaların üzerine yazar', default: false }),
     };
 
@@ -17,19 +18,10 @@ export default class Pull extends Command {
         const { flags } = await this.parse(Pull);
         
         const projectDir = process.cwd();
-        
-        let themeId = flags.theme;
-
-        const localConfigPath = path.join(projectDir, 'theme.config.js');
-        if (fs.existsSync(localConfigPath) && !themeId) {
-            try {
-                const localConfig = require(localConfigPath);
-                themeId = themeId || localConfig.themeId;
-            } catch(e) {}
-        }
+        const themeId = await resolveThemeId(projectDir, flags.theme);
 
         if (!themeId) {
-            this.error(chalk.red('Theme ID belirtilmelidir. "theme-kit pull -t <themeId>" komutunu kullanın veya projede init yapın.'));
+            this.error(chalk.red('Theme ID belirtilmelidir. "npx @crafter-cms/cli pull -t <themeId>" komutunu kullanın veya projede init yapın.'));
         }
 
         const spinner = ora('Tema dosyaları listeleniyor...').start();
@@ -87,7 +79,7 @@ export default class Pull extends Command {
             // (Artık config kaydetmiyoruz çünkü zaten theme.config.js init komutu ile oluşuyor)
 
             spinner.succeed(chalk.green(`Başarılı! ${downloadedCount} dosya indirildi.`));
-            this.log(chalk.blue('Temanızı düzenlemeye başlayabilirsiniz. Senkronize etmek için "theme-kit dev" komutunu çalıştırın.'));
+            this.log(chalk.blue('Temanızı düzenlemeye başlayabilirsiniz. Senkronize etmek için "npx @crafter-cms/cli dev" komutunu çalıştırın.'));
 
         } catch (error: any) {
             spinner.fail(chalk.red('İndirme işlemi başarısız oldu.'));

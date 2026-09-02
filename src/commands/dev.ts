@@ -1,6 +1,7 @@
 import { Command, Flags } from '@oclif/core';
 import { ApiService } from '../services/api.service';
 import { ConfigService } from '../services/config.service';
+import { resolveThemeId } from '../utils/theme';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
@@ -9,6 +10,8 @@ import chokidar from 'chokidar';
 import httpProxy from 'http-proxy';
 import * as http from 'http';
 import { WebSocketServer } from 'ws';
+import archiver from 'archiver';
+import FormData from 'form-data';
 
 export default class Dev extends Command {
     static description = "Akıllı senkronizasyon ve Development Theme izleme aracı.";
@@ -25,20 +28,19 @@ export default class Dev extends Command {
 
         const DEMO_WEBSITE_ID = '5bfb758c-0bad-434b-94cd-f5cfd492d2a8';
         let websiteId = flags.website || DEMO_WEBSITE_ID;
-        let themeId = flags.theme;
+        let themeId = await resolveThemeId(projectDir, flags.theme);
 
-        if (fs.existsSync(localConfigPath)) {
+        if (fs.existsSync(localConfigPath) && !flags.website) {
             try {
                 const localConfig = JSON.parse(fs.readFileSync(localConfigPath, 'utf8'));
-                themeId = themeId || localConfig.themeId;
-                if (!flags.website && localConfig.websiteId) {
+                if (localConfig.websiteId) {
                     websiteId = localConfig.websiteId;
                 }
             } catch (e) { }
         }
 
         if (!themeId) {
-            this.error(chalk.red('Theme ID bulunamadı. Lütfen önce "theme-kit init" komutunu çalıştırın.'));
+            this.error(chalk.red('Theme ID bulunamadı. Lütfen önce "npx @crafter-cms/cli init" komutunu çalıştırın veya -t <themeId> parametresini belirtin.'));
         }
 
         let api: any;
@@ -246,66 +248,43 @@ export default class Dev extends Command {
     }
 
     private async pushAllFiles(api: any, themeId: string, projectDir: string) {
-        const filesToUpload: string[] = [];
+        // 1. Temayı bellekte (Buffer olarak) ZIP'le
+        const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
+            const bufs: Buffer[] = [];
+            const archive = (archiver as any)('zip', { zlib: { level: 6 } });
 
-        const scanDir = async (dir: string) => {
-            const entries = await fs.readdir(dir, { withFileTypes: true });
-            for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                const relativePath = path.relative(projectDir, fullPath).replace(/\\/g, '/');
+            archive.on('data', (chunk: Buffer) => bufs.push(chunk));
+            archive.on('end', () => resolve(Buffer.concat(bufs)));
+            archive.on('error', (err: any) => reject(err));
 
-                if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.crafter' || entry.name === 'dist' || entry.name.endsWith('.zip')) {
-                    continue;
-                }
+            // Hariç tutulacak dosyalar (gereksiz yüklemeleri önler)
+            archive.glob('**/*', {
+                cwd: projectDir,
+                ignore: [
+                    'node_modules/**',
+                    '.git/**',
+                    '.crafter',
+                    '*.zip',
+                    'dist/**',
+                    '.DS_Store',
+                    'desktop.ini'
+                ],
+                dot: true // .liquidrc, .env gibi dotfile'ları dahil eder (.git ve .crafter hariç)
+            });
 
-                if (entry.isDirectory()) {
-                    await scanDir(fullPath);
-                } else {
-                    filesToUpload.push(relativePath);
-                }
-            }
-        };
+            archive.finalize();
+        });
 
-        await scanDir(projectDir);
+        // 2. Multipart FormData oluştur
+        const form = new FormData();
+        form.append('file', zipBuffer, {
+            filename: 'theme.zip',
+            contentType: 'application/zip',
+        });
 
-        let remoteFiles: string[] = [];
-        try {
-            const res = await api.get(`/marketplace/themes/${themeId}/files`);
-            if (res.data && res.data.files) {
-                remoteFiles = res.data.files;
-            }
-        } catch(e) {
-            // Hata olursa (örn eski sürüm API), yok say
-        }
-
-        // Bulutta olup lokalde olmayanları sil
-        const filesToDelete = remoteFiles.filter(f => !filesToUpload.includes(f));
-        for (const fileKey of filesToDelete) {
-            try {
-                await api.delete(`/marketplace/themes/${themeId}/file`, { data: { key: fileKey } });
-            } catch (e) {
-                // Ignore delete errors during sync
-            }
-        }
-
-        for (const fileKey of filesToUpload) {
-            const localFilePath = path.join(projectDir, fileKey);
-
-            const ext = path.extname(localFilePath).toLowerCase();
-            const binaryExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.otf'];
-            const isBinary = binaryExtensions.includes(ext);
-
-            const content = await fs.readFile(localFilePath, isBinary ? 'base64' : 'utf8');
-
-            const payload: any = {
-                key: fileKey,
-                content: content
-            };
-            if (isBinary) {
-                payload.encoding = 'base64';
-            }
-
-            await api.put(`/marketplace/themes/${themeId}/file`, payload);
-        }
+        // 3. Tek seferde backend'e gönder
+        await api.post(`/marketplace/themes/${themeId}/sync`, form, {
+            headers: form.getHeaders(),
+        });
     }
 }

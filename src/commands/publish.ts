@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core';
 import { ApiService } from '../services/api.service';
+import { resolveThemeId } from '../utils/theme';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
@@ -10,6 +11,7 @@ export default class Publish extends Command {
     static description = "Geliştirme (dev) ortamındaki temanızı yayınlamak üzere onaya gönderir.";
 
     static flags = {
+        theme: Flags.string({ char: 't', description: 'Theme ID (Opsiyonel, varsayılan olarak projedeki manifest kullanılır)' }),
         version: Flags.string({ char: 'v', description: 'Yayınlanacak sürüm (Örn: 1.0.1)' }),
         message: Flags.string({ char: 'm', description: 'Sürüm notları / Değişiklikler' }),
     };
@@ -17,19 +19,11 @@ export default class Publish extends Command {
     async run() {
         const { flags } = await this.parse(Publish);
         const projectDir = process.cwd();
-        const localConfigPath = path.join(projectDir, '.crafter');
 
-        let themeId: string | undefined;
-
-        if (fs.existsSync(localConfigPath)) {
-            try {
-                const localConfig = JSON.parse(fs.readFileSync(localConfigPath, 'utf8'));
-                themeId = localConfig.themeId;
-            } catch (e) { }
-        }
+        const themeId = await resolveThemeId(projectDir, flags.theme);
 
         if (!themeId) {
-            this.error(chalk.red('Theme ID bulunamadı. Lütfen önce "theme-kit init" komutunu çalıştırın.'));
+            this.error(chalk.red('Theme ID bulunamadı. Lütfen önce "npx @crafter-cms/cli init" komutunu çalıştırın veya -t <themeId> parametresini belirtin.'));
         }
 
         let api: any;

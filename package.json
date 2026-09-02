@@ -1,6 +1,6 @@
 {
   "name": "@crafter-cms/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Crafter CMS CLI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -61,7 +61,7 @@
     "topicSeparator": " ",
     "topics": {
       "config": {
-        "description": "Manage theme-kit configuration"
+        "description": "Manage Crafter CMS CLI configuration"
       }
     }
   }

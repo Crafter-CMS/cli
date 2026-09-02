@@ -1,7 +1,7 @@
 import { Command, Flags } from '@oclif/core';
 import { confirm } from '@inquirer/prompts';
 import { AuthGuard } from '../utils/auth.guard';
-import { ApiService } from '../services/api.service';
+import { resolveThemeId } from '../utils/theme';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 import chalk from 'chalk';
@@ -11,6 +11,7 @@ export default class Rollback extends Command {
     static description = 'Temayı belirli bir versiyona geri döndür';
 
     static flags = {
+        theme: Flags.string({ char: 't', description: 'Theme ID (Opsiyonel)' }),
         version: Flags.string({ char: 'v', description: 'Geri dönülecek versiyon', required: true }),
     };
 
@@ -19,17 +20,10 @@ export default class Rollback extends Command {
         const { flags } = await this.parse(Rollback);
 
         const projectDir = process.cwd();
-        const configPath = path.join(projectDir, 'theme.config.js');
-
-        if (!(await fs.pathExists(configPath))) {
-            this.error(chalk.red('theme.config.js bulunamadı.'));
-        }
-
-        const themeConfig = require(configPath);
-        const themeId = themeConfig.themeId;
+        const themeId = await resolveThemeId(projectDir, flags.theme);
 
         if (!themeId) {
-            this.error(chalk.red('themeId bulunamadı.'));
+            this.error(chalk.red('Theme ID bulunamadı. Lütfen "npx @crafter-cms/cli init" komutunu çalıştırın veya -t parametresi ile belirtin.'));
         }
 
         const confirmed = await confirm({
