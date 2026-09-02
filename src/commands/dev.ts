@@ -10,7 +10,7 @@ import chokidar from 'chokidar';
 import httpProxy from 'http-proxy';
 import * as http from 'http';
 import { WebSocketServer } from 'ws';
-import archiver from 'archiver';
+const archiver = require('archiver');
 import FormData from 'form-data';
 
 export default class Dev extends Command {

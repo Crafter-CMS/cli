@@ -3,7 +3,7 @@ import { ApiService } from '../services/api.service';
 import { resolveThemeId } from '../utils/theme';
 import chalk from 'chalk';
 import ora from 'ora';
-import archiver from 'archiver';
+const archiver = require('archiver');
 import FormData from 'form-data';
 
 export default class Push extends Command {
