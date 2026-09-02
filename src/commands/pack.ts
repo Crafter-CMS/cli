@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
 import * as fs from 'fs-extra';
-const archiver = require('archiver');
+import { createZipArchive } from '../utils/zip';
 
 export default class Pack extends Command {
     static description = 'Temayı dağıtmak veya satmak için .zip dosyası haline getirir.';
@@ -22,7 +22,7 @@ export default class Pack extends Command {
             }
 
             const output = fs.createWriteStream(zipFilePath);
-            const archive = archiver('zip', {
+            const archive = createZipArchive({
                 zlib: { level: 9 } // Sets the compression level.
             });
 

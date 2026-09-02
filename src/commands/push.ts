@@ -1,9 +1,9 @@
 import { Command, Flags } from '@oclif/core';
 import { ApiService } from '../services/api.service';
 import { resolveThemeId } from '../utils/theme';
+import { createZipArchive } from '../utils/zip';
 import chalk from 'chalk';
 import ora from 'ora';
-const archiver = require('archiver');
 import FormData from 'form-data';
 
 export default class Push extends Command {
@@ -31,7 +31,7 @@ export default class Push extends Command {
             // 1. Temayı bellekte (Buffer olarak) ZIP'le
             const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
                 const bufs: Buffer[] = [];
-                const archive = (archiver as any)('zip', { zlib: { level: 6 } });
+                const archive = createZipArchive({ zlib: { level: 6 } });
 
                 archive.on('data', (chunk: Buffer) => bufs.push(chunk));
                 archive.on('end', () => resolve(Buffer.concat(bufs)));
