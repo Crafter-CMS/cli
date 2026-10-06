@@ -15,7 +15,7 @@ export default class ConfigList extends Command {
 
         table.push(
             ['apiUrl', config.apiUrl || 'https://api.crafter.net.tr'],
-            ['storefrontUrl', config.storefrontUrl || 'https://origin.crafterdns.tech'],
+            ['storefrontUrl', config.storefrontUrl || 'https://origin.crafter.web.tr'],
             ['userId', config.userId || 'Giriş yapılmadı'],
             ['accessToken', config.accessToken ? `${config.accessToken.substring(0, 10)}...` : 'Yok'],
             ['refreshToken', config.refreshToken ? '********' : 'Yok']

@@ -1,6 +1,6 @@
 {
   "name": "@crafter-cms/cli",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Crafter CMS CLI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

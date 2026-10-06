@@ -13,7 +13,7 @@ export interface Config {
 export class ConfigService {
     private static configPath = path.join(os.homedir(), '.crafter', 'config.json');
     private static defaultApiUrl = 'https://api.crafter.net.tr';
-    private static defaultStorefrontUrl = 'https://origin.crafterdns.tech';
+    private static defaultStorefrontUrl = 'https://origin.crafter.web.tr';
 
     static async getConfig(): Promise<Config> {
         try {
