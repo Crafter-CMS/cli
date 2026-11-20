@@ -1,6 +1,6 @@
 # @crafter-cms/cli
 
-Crafter CMS platformu için tema yönetim aracı (Marketplace).
+Crafter platformu için tema yönetim aracı (Marketplace).
 
 ## Kurulum
 
@@ -31,8 +31,8 @@ crafter <komut>
 ### Tema Geliştirme
 
 - `crafter init`: Yeni bir tema projesi başlatın veya var olan temanızı seçin.
-- `crafter dev`: Akıllı senkronizasyon ve geliştirme izleme (watcher) aracını başlatın.
+- `crafter dev`: Akıllı senkronizasyon ve geliştirme izleme (watcher) aracını başlatın. (1.0.7: canlı önizleme güvenlik güncellemesi nedeniyle geçici olarak kapalı; dosya senkronizasyonu çalışır.)
 - `crafter push`: Yerel dosyaları tamamen buluta yükleyin (Sıfırdan senkronizasyon).
-- `crafter pull`: Buluttaki tüm dosyaları yerel klasöre indirin.
+- `crafter pull`: Buluttaki tüm dosyaları yerel klasöre indirin. (1.0.7: sunucuda indirme uç noktası olmadığı için geçici olarak kullanılamıyor.)
 - `crafter pack`: Temayı satmak/dağıtmak üzere .zip haline getirin.
 - `crafter publish`: Geliştirme (dev) ortamınızdaki dosyaları alıp resmi bir sürüm (versiyon) olarak paketler ve onay sürecine gönderir.

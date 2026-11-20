@@ -1,7 +1,7 @@
 {
   "name": "@crafter-cms/cli",
-  "version": "1.0.6",
-  "description": "Crafter CMS CLI",
+  "version": "1.0.7",
+  "description": "Crafter theme CLI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -16,9 +16,8 @@
   "scripts": {
     "build": "shx rm -rf dist && tsc -b",
     "postpack": "shx rm -f oclif.manifest.json",
-    "posttest": "npm run lint",
     "prepack": "npm run build && npx oclif manifest",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "version": "git add README.md"
   },
   "author": "Crafter CMS",
@@ -52,7 +51,8 @@
     "@types/ws": "^8.18.1",
     "shx": "^0.3.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.7"
   },
   "oclif": {
     "bin": "crafter",
@@ -61,7 +61,7 @@
     "topicSeparator": " ",
     "topics": {
       "config": {
-        "description": "Manage Crafter CMS CLI configuration"
+        "description": "Manage Crafter CLI configuration"
       }
     }
   }

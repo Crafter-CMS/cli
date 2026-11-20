@@ -3,8 +3,7 @@ import { ApiService } from '../services/api.service';
 import { resolveThemeId } from '../utils/theme';
 import chalk from 'chalk';
 import ora from 'ora';
-import * as path from 'path';
-import * as fs from 'fs-extra';
+import { syncManifestWithApi } from '../utils/manifest';
 import { input } from '@inquirer/prompts';
 
 export default class Publish extends Command {
@@ -33,17 +32,8 @@ export default class Publish extends Command {
             this.error(chalk.red("API'ye bağlanılamadı: " + error.message));
         }
 
-        // Generate crafter-manifest.json to ensure security features work
-        const manifestPath = path.join(projectDir, 'crafter-manifest.json');
-        let manifestData: any = { marketplaceThemeId: themeId };
-        try {
-            const res = await api.get(`/marketplace/themes/${themeId}/manifest`);
-            if (res.data) {
-                manifestData = res.data;
-            }
-        } catch (e) { }
-        await fs.writeJSON(manifestPath, manifestData, { spaces: 2 });
-
+        // crafter-manifest.json yerel kalır: sunucu manifesti yalnızca eksik alanları doldurur, yazma onayla yapılır
+        await syncManifestWithApi(projectDir, themeId as string, api, (m) => this.log(chalk.yellow(m)));
 
         let version = flags.version;
         if (!version) {

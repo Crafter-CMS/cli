@@ -3,7 +3,8 @@ import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
 import * as fs from 'fs-extra';
-import { createZipArchive } from '../utils/zip';
+import { createZipArchive, addThemeFiles } from '../utils/zip';
+import { collectThemeFiles, formatSkippedFiles } from '../utils/ignore';
 
 export default class Pack extends Command {
     static description = 'Temayı dağıtmak veya satmak için .zip dosyası haline getirir.';
@@ -19,6 +20,14 @@ export default class Pack extends Command {
             // Delete existing zip if any
             if (fs.existsSync(zipFilePath)) {
                 await fs.remove(zipFilePath);
+            }
+
+            const { files, skipped } = await collectThemeFiles(projectDir, { includeLocalOnly: true });
+            if (skipped.length > 0) {
+                spinner.stop();
+                this.log(chalk.yellow(`${skipped.length} dosya pakete eklenmedi / ${skipped.length} file(s) left out of the package:`));
+                formatSkippedFiles(skipped).forEach((l) => this.log(chalk.yellow(l)));
+                spinner.start();
             }
 
             const output = fs.createWriteStream(zipFilePath);
@@ -46,17 +55,8 @@ export default class Pack extends Command {
 
                 archive.pipe(output);
 
-                // ignore files
-                archive.glob('**/*', {
-                    cwd: projectDir,
-                    ignore: [
-                        'node_modules/**',
-                        '.git/**',
-                        '.crafter',
-                        zipFileName,
-                        'dist/**'
-                    ]
-                });
+                // dev/push ve izleyiciyle aynı ortak yok sayma listesi; crafter-manifest.json pakete dahil
+                addThemeFiles(archive, projectDir, files);
 
                 archive.finalize();
             });

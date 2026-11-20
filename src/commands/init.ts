@@ -6,6 +6,7 @@ import * as fs from 'fs-extra';
 import { select, input, confirm } from '@inquirer/prompts';
 import { execSync } from 'child_process';
 import { ApiService } from '../services/api.service';
+import { MANIFEST_FILE, syncManifestWithApi } from '../utils/manifest';
 
 export default class Init extends Command {
     static description = 'Sıfırdan geliştirme yapmak için yerel klasörde Marketplace temasını init eder.';
@@ -21,7 +22,7 @@ export default class Init extends Command {
             this.error(chalk.red("API'ye bağlanılamadı: " + error.message));
         }
 
-        this.log(chalk.cyan('Crafter CMS Tema Geliştirme (Marketplace)'));
+        this.log(chalk.cyan('Crafter Tema Geliştirme (Marketplace)'));
 
         const action = await select({
             message: 'Ne yapmak istiyorsunuz?',
@@ -91,17 +92,6 @@ export default class Init extends Command {
             }
             await fs.writeJSON(localConfigPath, { ...currentConfig, themeId }, { spaces: 2 });
 
-            // Generate crafter-manifest.json
-            const manifestPath = path.join(projectDir, 'crafter-manifest.json');
-            let manifestData: any = { marketplaceThemeId: themeId };
-            try {
-                const res = await api.get(`/marketplace/themes/${themeId}/manifest`);
-                if (res.data) {
-                    manifestData = res.data;
-                }
-            } catch (e) { }
-            await fs.writeJSON(manifestPath, manifestData, { spaces: 2 });
-            
             // Sadece dizin boşsa veya iskelet yoksa boilerplate dosyaları oluştur
             if (!fs.existsSync(path.join(projectDir, 'layout', 'theme.liquid'))) {
                 
@@ -124,7 +114,8 @@ export default class Init extends Command {
                         
                         const items = await fs.readdir(tempDir);
                         for (const item of items) {
-                            if (item === '.git') continue;
+                            // Şablonun manifesti başka bir temaya (şablonun kendisine) aittir; yerel manifestin yerine geçmez
+                            if (item === '.git' || item === MANIFEST_FILE) continue;
                             await fs.move(path.join(tempDir, item), path.join(projectDir, item), { overwrite: true });
                         }
                         
@@ -140,6 +131,9 @@ export default class Init extends Command {
                     await this.createBoilerplate(projectDir);
                 }
             }
+
+            // crafter-manifest.json yerel kalır: sunucu manifesti yalnızca eksik alanları doldurur, yazma onayla yapılır
+            await syncManifestWithApi(projectDir, themeId, api, (m) => this.log(chalk.yellow(m)), true);
 
             this.log(chalk.green('\n✅ Init işlemi tamamlandı!'));
             this.log(chalk.blue('Şimdi "npx @crafter-cms/cli dev" komutunu çalıştırarak geliştirmeye başlayabilirsiniz.'));

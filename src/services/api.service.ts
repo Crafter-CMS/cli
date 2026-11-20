@@ -26,11 +26,7 @@ export class ApiService {
                 if (this.isTokenExpired(currentConfig.accessToken)) {
                     if (currentConfig.refreshToken) {
                         try {
-                            const response = await axios.post(`${apiUrl}/auth/refresh-token`, {
-                                refreshToken: currentConfig.refreshToken,
-                            });
-                            const { accessToken } = response.data;
-                            await ConfigService.setConfig({ accessToken });
+                            const accessToken = await this.refreshTokens(apiUrl, currentConfig.refreshToken);
                             axiosConfig.headers.Authorization = `Bearer ${accessToken}`;
                         } catch (error) {
                             console.error(chalk.red('\nOturumunuz sona erdi. Lütfen npx @crafter-cms/cli login komutu ile tekrar giriş yapın.'));
@@ -64,6 +60,32 @@ export class ApiService {
         );
 
         return this.instance;
+    }
+
+    private static refreshInFlight: Promise<string> | null = null;
+
+    /**
+     * Token'ı yeniler ve yeni access/refresh token'ı config dosyasına kaydeder.
+     * Aynı anda gelen istekler (dev izleyicisi) tek bir yenileme isteğini paylaşır.
+     */
+    static refreshTokens(apiUrl: string, refreshToken: string): Promise<string> {
+        if (!this.refreshInFlight) {
+            this.refreshInFlight = (async () => {
+                const response = await axios.post(`${apiUrl}/auth/refresh-token`, { refreshToken });
+                const data = response.data?.data ?? response.data;
+                const newAccessToken: string | undefined = data?.accessToken;
+                if (!newAccessToken) throw new Error('Token yenilenemedi.');
+                const newRefreshToken: string | undefined = data?.refreshToken;
+                await ConfigService.setConfig({
+                    accessToken: newAccessToken,
+                    ...(newRefreshToken ? { refreshToken: newRefreshToken } : {}),
+                });
+                return newAccessToken;
+            })().finally(() => {
+                this.refreshInFlight = null;
+            });
+        }
+        return this.refreshInFlight;
     }
 
     private static isTokenExpired(token: string): boolean {

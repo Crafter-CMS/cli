@@ -2,7 +2,19 @@ import { Command, Flags } from '@oclif/core';
 import { ApiService } from '../services/api.service';
 import { ConfigService } from '../services/config.service';
 import { resolveThemeId } from '../utils/theme';
-import { createZipArchive } from '../utils/zip';
+import { isIgnoredPath, getUploadSkipReason, describeSkipReason, formatSkippedFiles, toThemeKey, LOCAL_ONLY_FILES } from '../utils/ignore';
+import { syncThemeFiles } from '../utils/sync';
+import { syncManifestWithApi } from '../utils/manifest';
+import {
+    DEV_THEME_VERSION_HEADER,
+    PREVIEW_UNAVAILABLE_LINES,
+    isDevPreviewForbidden,
+    isThemePublished,
+    previewUnavailableHtml,
+    probeDevPreview,
+    publishedPreviewLines,
+    publishedPreviewUrl,
+} from '../utils/preview';
 import chalk from 'chalk';
 import ora from 'ora';
 import * as path from 'path';
@@ -11,7 +23,6 @@ import chokidar from 'chokidar';
 import httpProxy from 'http-proxy';
 import * as http from 'http';
 import { WebSocketServer } from 'ws';
-import FormData from 'form-data';
 
 export default class Dev extends Command {
     static description = "Akıllı senkronizasyon ve Development Theme izleme aracı.";
@@ -50,23 +61,18 @@ export default class Dev extends Command {
             this.error(chalk.red("API'ye bağlanılamadı: " + error.message));
         }
 
-        // Generate crafter-manifest.json to ensure security features work
-        const manifestPath = path.join(projectDir, 'crafter-manifest.json');
-        let manifestData: any = { marketplaceThemeId: themeId };
-        try {
-            const res = await api.get(`/marketplace/themes/${themeId}/manifest`);
-            if (res.data) {
-                manifestData = res.data;
-            }
-        } catch (e) { }
-        await fs.writeJSON(manifestPath, manifestData, { spaces: 2 });
-
+        // crafter-manifest.json yerel kalır: sunucu manifesti yalnızca eksik alanları doldurur, yazma onayla yapılır
+        await syncManifestWithApi(projectDir, themeId as string, api, (m) => this.log(chalk.yellow(m)));
 
         // Hem yeni hem mevcut tema için başlangıçta tüm dosyaları senkronize et
         const pushSpinner = ora('Tüm dosyalar senkronize ediliyor (assets dahil)...').start();
         try {
-            await this.pushAllFiles(api, themeId as string, projectDir);
-            pushSpinner.succeed(chalk.green('Tüm dosyalar başarıyla yüklendi!'));
+            const result = await syncThemeFiles(api, themeId as string, projectDir, (m) => { pushSpinner.text = m; });
+            pushSpinner.succeed(chalk.green(`Tüm dosyalar başarıyla yüklendi! (${result.fileCount} dosya)`));
+            if (result.skipped.length > 0) {
+                this.log(chalk.yellow(`${result.skipped.length} dosya gönderilmedi / ${result.skipped.length} file(s) not uploaded:`));
+                formatSkippedFiles(result.skipped).forEach((l) => this.log(chalk.yellow(l)));
+            }
         } catch (error: any) {
             pushSpinner.fail(chalk.red('Dosya senkronizasyonu başarısız: ' + (error.response?.data?.message || error.message)));
         }
@@ -76,6 +82,29 @@ export default class Dev extends Command {
         // ==========================================
         const proxyPort = 9292;
         const targetStorefront = await ConfigService.getStorefrontUrl();
+
+        // #319 sonrası dev kaynağı imzalı token olmadan 403 alır: önizlemeyi kapat, izleme ve senkronizasyon sürsün
+        let previewUnavailableShown = false;
+        let publishedUrl: string | undefined;
+        const showPreviewUnavailable = async () => {
+            if (previewUnavailableShown) return;
+            previewUnavailableShown = true;
+            if (await isThemePublished(api, themeId as string)) {
+                publishedUrl = publishedPreviewUrl(targetStorefront, themeId as string);
+            }
+            this.log('');
+            PREVIEW_UNAVAILABLE_LINES.forEach((l) => this.log(chalk.yellow(l)));
+            if (publishedUrl) {
+                publishedPreviewLines(publishedUrl).forEach((l) => this.log(chalk.cyan(l)));
+            }
+            this.log('');
+        };
+
+        const previewProbe = await probeDevPreview(targetStorefront, themeId as string);
+        const previewEnabled = previewProbe !== 'forbidden';
+        if (!previewEnabled) {
+            await showPreviewUnavailable();
+        }
 
         const proxy = httpProxy.createProxyServer({
             target: targetStorefront,
@@ -90,7 +119,28 @@ export default class Dev extends Command {
             proxyReq.removeHeader('accept-encoding');
         });
 
+        proxy.on('error', (err, _req, res) => {
+            try {
+                const out = res as http.ServerResponse;
+                if (!out.headersSent) {
+                    out.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+                }
+                out.end('Storefront erişilemiyor / Storefront unreachable: ' + err.message);
+            } catch (e) { }
+        });
+
         proxy.on('proxyRes', (proxyRes, req, res) => {
+            if (isDevPreviewForbidden(proxyRes.statusCode)) {
+                // Token olmadan dev kaynağı reddedildi: yanıtı tüket, açıklayıcı sayfa göster, süreci sonlandırma
+                proxyRes.resume();
+                showPreviewUnavailable().finally(() => {
+                    if (!res.headersSent) {
+                        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+                    }
+                    res.end(previewUnavailableHtml(publishedUrl));
+                });
+                return;
+            }
             let body = Buffer.alloc(0);
             proxyRes.on('data', (chunk) => {
                 body = Buffer.concat([body, chunk]);
@@ -147,7 +197,7 @@ export default class Dev extends Command {
                 // Ayrıca header olarak da ekleyelim (Storefront nasıl okuyorsa)
                 // req.headers['x-crafter-website-id'] = websiteId as string;
                 req.headers['x-crafter-theme-id'] = themeId as string;
-                req.headers['x-crafter-theme-version'] = 'dev';
+                req.headers[DEV_THEME_VERSION_HEADER] = 'dev';
 
                 req.url = urlObj.pathname + urlObj.search;
 
@@ -164,9 +214,15 @@ export default class Dev extends Command {
             });
         });
 
-        server.listen(proxyPort, () => {
-            this.log(chalk.cyan("\n🌍 Canlı Önizleme: " + chalk.underline("http://localhost:" + proxyPort) + "\n"));
+        server.on('error', (err: any) => {
+            this.log(chalk.yellow(`Önizleme sunucusu başlatılamadı (port ${proxyPort}): ${err.message}. Dosya izleme devam ediyor. / Preview server could not start; file watching continues.`));
         });
+
+        if (previewEnabled) {
+            server.listen(proxyPort, () => {
+                this.log(chalk.cyan("\n🌍 Canlı Önizleme: " + chalk.underline("http://localhost:" + proxyPort) + "\n"));
+            });
+        }
 
         // ==========================================
         // CHOKIDAR WATCHER
@@ -174,18 +230,26 @@ export default class Dev extends Command {
         const watchSpinner = ora('Dosya değişiklikleri izleniyor (Watch Mode)...').start();
 
         const watcher = chokidar.watch(projectDir, {
-            ignored: [
-                /(^|[\/\\])\../,
-                /node_modules/,
-                /dist/,
-                /\.zip$/
-            ],
+            // zip ile aynı ortak yok sayma listesi (gizli dosyalar, node_modules, dist, .zip ...)
+            ignored: (filePath: string) => isIgnoredPath(toThemeKey(projectDir, filePath)),
             persistent: true,
             ignoreInitial: true,
         });
 
         const uploadFile = async (filePath: string) => {
-            const relativePath = path.relative(projectDir, filePath).replace(/\\/g, '/');
+            const relativePath = toThemeKey(projectDir, filePath);
+            if (LOCAL_ONLY_FILES.includes(relativePath)) return;
+
+            let size: number | undefined;
+            try {
+                size = (await fs.stat(filePath)).size;
+            } catch (e) { }
+            const skipReason = getUploadSkipReason(relativePath, size);
+            if (skipReason) {
+                this.log(chalk.yellow(`Atlandı / Skipped: ${relativePath} (${describeSkipReason(skipReason)})`));
+                return;
+            }
+
             const fileSpinner = ora("Yükleniyor: " + relativePath).start();
 
             try {
@@ -216,12 +280,19 @@ export default class Dev extends Command {
 
             } catch (error: any) {
                 fileSpinner.fail(chalk.red("Hata: " + relativePath));
-                console.error(error.response?.data?.message || error.message);
+                const status = error.response?.status;
+                if (status === 400 || status === 413) {
+                    console.error(chalk.yellow(`Sunucu dosyayı reddetti (${status}) / Server rejected the file: ` + (error.response?.data?.message || error.message)));
+                } else {
+                    console.error(error.response?.data?.message || error.message);
+                }
             }
         };
 
         const deleteFile = async (filePath: string) => {
-            const relativePath = path.relative(projectDir, filePath).replace(/\\/g, '/');
+            const relativePath = toThemeKey(projectDir, filePath);
+            // Sunucuya hiç gönderilmeyen dosyalar için silme isteği atılmaz
+            if (LOCAL_ONLY_FILES.includes(relativePath) || getUploadSkipReason(relativePath)) return;
             const fileSpinner = ora("Siliniyor: " + relativePath).start();
             try {
                 await api.delete(`/marketplace/themes/${themeId}/file`, { data: { key: relativePath } });
@@ -245,46 +316,5 @@ export default class Dev extends Command {
             .on('unlink', filePath => deleteFile(filePath));
 
         return new Promise(() => { });
-    }
-
-    private async pushAllFiles(api: any, themeId: string, projectDir: string) {
-        // 1. Temayı bellekte (Buffer olarak) ZIP'le
-        const zipBuffer = await new Promise<Buffer>((resolve, reject) => {
-            const bufs: Buffer[] = [];
-            const archive = createZipArchive({ zlib: { level: 6 } });
-
-            archive.on('data', (chunk: Buffer) => bufs.push(chunk));
-            archive.on('end', () => resolve(Buffer.concat(bufs)));
-            archive.on('error', (err: any) => reject(err));
-
-            // Hariç tutulacak dosyalar (gereksiz yüklemeleri önler)
-            archive.glob('**/*', {
-                cwd: projectDir,
-                ignore: [
-                    'node_modules/**',
-                    '.git/**',
-                    '.crafter',
-                    '*.zip',
-                    'dist/**',
-                    '.DS_Store',
-                    'desktop.ini'
-                ],
-                dot: true // .liquidrc, .env gibi dotfile'ları dahil eder (.git ve .crafter hariç)
-            });
-
-            archive.finalize();
-        });
-
-        // 2. Multipart FormData oluştur
-        const form = new FormData();
-        form.append('file', zipBuffer, {
-            filename: 'theme.zip',
-            contentType: 'application/zip',
-        });
-
-        // 3. Tek seferde backend'e gönder
-        await api.post(`/marketplace/themes/${themeId}/sync`, form, {
-            headers: form.getHeaders(),
-        });
     }
 }
